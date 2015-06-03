@@ -1,6 +1,6 @@
 gDATA     SEGMENT
           CLT   EQU   0AH, 0DH
-          gINFO DB    "Use w/s/a/d to move", CLT, '$'
+          gINFO DB    "Use w/s/a/d to move, Q to quit to the main menu", CLT, '$'
           VIEW  DB    "+-----+-----+-----+-----+", CLT
                 DB    "+     +     +     +     +", CLT
                 DB    "+     +     +     +     +", CLT
@@ -28,15 +28,13 @@ gDATA     SEGMENT
           QINFO DB    "Congratulations! Your score is ", '$'
           RECO  DW    0000H
           RECI  DW    0000H
+          HISC  DB    01H
 gDATA     ENDS
 
 gCODE     SEGMENT
 
   RELIN   PROC
-            ASSUME    CS:gCODE, DS:gDATA
-            MOV       AX, gDATA
-            MOV       DS, AX
-
+            ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
             PUSH  DI
             PUSH  DX
             MOV   SI, DI
@@ -61,6 +59,9 @@ gCODE     SEGMENT
     COMB:   INC   DL
             MOV   MODE[SI], DL
             MOV   MODE[DI], 00H
+            CMP   DL, HISC
+            JNA   lSTA
+            MOV   HISC, DL
             JMP   lSTA
 
     lRE:    POP   DX
@@ -69,10 +70,7 @@ gCODE     SEGMENT
   RELIN   ENDP
 
   PUT1    PROC
-            ASSUME    CS:gCODE, DS:gDATA
-            MOV       AX, gDATA
-            MOV       DS, AX
-            
+            ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
             MOV   CX, 0              ;CX初始为0
             MOV   AH, 0
             INT   1AH                ;读时钟计数器值到DX
@@ -81,25 +79,28 @@ gCODE     SEGMENT
             MOV   DL, 10H
             DIV   DL                 ;除16，产生0~15余数
             MOV   BX, 0FFFFH         ;BX初始化为-1
-
+            ADD   AH, 01H
             MOV   CL, AH             ;CL中放余数
-            ADD   CL, 01H
+
     AGAIN:  INC   BX
             CMP   BX, 000FH
-            JA    RE
+            JA    TOOUT
             CMP   MODE[BX], 00H
             JNE   AGAIN
             LOOP  AGAIN
             MOV   MODE[BX], 01H
+            JMP   RE
+
+    TOOUT:  CMP   CL ,AH
+            JE    RE
+            MOV   BX, 0FFFFH
+            JMP   AGAIN
 
     RE:     RET
   PUT1    ENDP
 
   REMOD   PROC
-            ASSUME    CS:gCODE, DS:gDATA
-            MOV       AX, gDATA
-            MOV       DS, AX
-
+            ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
             MOV       CX, 0004H
     STA:    PUSH      DI
             MOV       BX, DI
@@ -117,20 +118,14 @@ gCODE     SEGMENT
             RET
   REMOD   ENDP
 
-  REVEW   PROC
-            ASSUME    CS:gCODE, DS:gDATA
-            MOV       AX, gDATA
-            MOV       DS, AX
-
-            MOV       SI, 0000H
-    vSTA:   MOV       AH, 02H
-            MOV       BH, 00H
-            MOV       BP, SI
-            MOV       DX, VPIT[BP][SI]
-            INT       10H             ;鼠标定位
-
+  PRVIE   PROC        FAR
+            PUSH      DS
+            PUSH      ES
+            ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
+            MOV       CX, gDATA
+            MOV       DS, CX
+            
             PUSH      SI
-            MOV       AL, MODE[SI]
             MOV       SI, 0000H
             CBW
             ADD       SI, AX
@@ -144,8 +139,24 @@ gCODE     SEGMENT
             INT       21H             ;重复5次输出单个字符
             INC       SI
             LOOP      PRIL
-
             POP       SI
+
+            POP       ES
+            POP       DS
+            RET
+  PRVIE   ENDP
+
+  REVEW   PROC
+            ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
+            MOV       SI, 0000H
+    vSTA:   MOV       AH, 02H
+            MOV       BH, 00H
+            MOV       BP, SI
+            MOV       DX, VPIT[BP][SI]
+            INT       10H             ;鼠标定位
+
+            MOV       AL, MODE[SI]
+            CALL      PRVIE
             INC       SI
             CMP       SI, 0010H
             JB        vSTA
@@ -159,6 +170,8 @@ gCODE     SEGMENT
   REVEW   ENDP
 
   GAME    PROC      FAR
+            PUSH      DS
+            PUSH      ES
             ASSUME    CS:gCODE, DS:gDATA, ES:gDATA
             MOV       AX, gDATA
             MOV       DS, AX
@@ -169,6 +182,7 @@ gCODE     SEGMENT
             CLD
             MOV       CX, 0010H
             REP       STOSB
+            MOV       HISC, 01H
 
             CLS
             PRINT     gINFO
@@ -184,6 +198,14 @@ gCODE     SEGMENT
             CMP       AL, 'a'
             JE        LEFT
             CMP       AL, 'd'
+            JE        RIGHT
+            CMP       AL, 'W'
+            JE        UP
+            CMP       AL, 'S'
+            JE        DOWN
+            CMP       AL, 'A'
+            JE        LEFT
+            CMP       AL, 'D'
             JE        RIGHT
             CMP       AL, 'Q'
             JE        QUIT
@@ -212,6 +234,12 @@ gCODE     SEGMENT
             JMP       START
             
     QUIT:   PRINT     QINFO
+            MOV       AL, HISC
+            CALL      PRVIE
+            MOV       AL, HISC
+            CALL      SAVSCR
+            POP       ES
+            POP       DS
             DELY
             DELY
             
